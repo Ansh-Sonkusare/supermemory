@@ -1,4 +1,5 @@
 import { createFetch, createSchema } from "@better-fetch/fetch"
+import { isApiKeyMode, API_KEY } from "./dev-mode"
 import { z } from "zod"
 import {
 	AnalyticsChatResponseSchema,
@@ -352,11 +353,14 @@ export const apiSchema = createSchema({
 
 export const $fetch = createFetch({
 	baseURL: `${process.env.NEXT_PUBLIC_BACKEND_URL ?? "https://api.supermemory.ai"}/v3`,
-	credentials: "include",
+	credentials: isApiKeyMode ? "omit" : "include",
 	headers: { "X-App-Source": "nova" },
 	onRequest: (context: { headers: Headers }) => {
 		if (!context.headers.has("X-App-Source")) {
 			context.headers.set("X-App-Source", "nova")
+		}
+		if (isApiKeyMode && !context.headers.has("Authorization")) {
+			context.headers.set("Authorization", "Bearer " + API_KEY)
 		}
 	},
 	retry: {

@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react"
 import { authClient, useSession } from "./auth"
+import { isApiKeyMode } from "./dev-mode"
 
 type Organization = typeof authClient.$Infer.ActiveOrganization
 type SessionData = NonNullable<ReturnType<typeof useSession>["data"]>
@@ -35,6 +36,41 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+	if (isApiKeyMode) {
+		const localOrg = {
+			id: "local",
+			name: "Local",
+			slug: "local",
+			createdAt: new Date(),
+			logo: null,
+			metadata: null,
+		} as unknown as Organization
+		const value: AuthContextType = {
+			session: {
+				id: "local",
+				userId: "local",
+				createdAt: "",
+				updatedAt: "",
+			} as unknown as SessionData["session"],
+			user: {
+				id: "local",
+				name: "Dev User",
+				email: "dev@local",
+				emailVerified: true,
+			} as unknown as SessionData["user"],
+			org: localOrg,
+			organizations: [localOrg] as unknown as OrganizationListItem[],
+			isRestoring: false,
+			isSessionPending: false,
+			setActiveOrg: async () => {},
+			clearActiveOrg: async () => {},
+			updateOrgMetadata: () => {},
+			refetchActiveOrg: async () => null,
+			refetchOrganizations: async () => {},
+		}
+		return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+	}
+
 	const { data: session, isPending: isSessionPending } = useSession()
 	const [org, setOrg] = useState<Organization | null>(null)
 	const [isRestoring, setIsRestoring] = useState(true)
