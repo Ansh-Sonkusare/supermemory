@@ -2,7 +2,7 @@ import {
 	type LanguageModel,
 	type LanguageModelCallOptions,
 	type LanguageModelStreamPart,
-	getLastUserMessage,
+	hasPersistableUserContent,
 } from "./util"
 import {
 	createSupermemoryContext,
@@ -11,6 +11,7 @@ import {
 	saveMemoryAfterResponse,
 } from "./middleware"
 import type { PromptTemplate, MemoryPromptData } from "./memory-prompt"
+import { injectMemoriesIntoParams } from "./memory-prompt"
 
 const DEFAULT_MEMORY_RETRIEVAL_TIMEOUT_MS = 5000
 
@@ -38,6 +39,12 @@ interface WrapVercelLanguageModelOptions {
 	apiKey?: string
 	/** Custom Supermemory API base URL */
 	baseUrl?: string
+	/**
+	 * Persist assistant tool calls and tool results as part of the saved
+	 * conversation. Off by default: tool payloads are often large and
+	 * low-signal, and would pollute memory extraction.
+	 */
+	includeToolCalls?: boolean
 	/**
 	 * Custom function to format memory data into the system prompt.
 	 * If not provided, uses the default "User Supermemories:" format.
@@ -134,6 +141,7 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 		mode: options.mode ?? "profile",
 		addMemory: options.addMemory ?? "always",
 		baseUrl: options.baseUrl,
+		includeToolCalls: options.includeToolCalls ?? false,
 		promptTemplate: options.promptTemplate,
 		memoryRetrievalTimeoutMs: DEFAULT_MEMORY_RETRIEVAL_TIMEOUT_MS,
 	})
@@ -159,7 +167,7 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 											: "Unknown error",
 								},
 							)
-							modelParams = params
+							modelParams = injectMemoriesIntoParams(params, "", ctx.logger)
 						} else {
 							ctx.logger.error("Error during memory retrieval for generation", {
 								error:
@@ -175,11 +183,9 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 						// biome-ignore lint/suspicious/noExplicitAny: Union type compatibility between V2 and V3
 						const result = await target.doGenerate(modelParams as any)
 
-						const userMessage = getLastUserMessage(params)
 						if (
 							ctx.addMemory === "always" &&
-							userMessage &&
-							userMessage.trim()
+							hasPersistableUserContent(params)
 						) {
 							const assistantResponseText = extractAssistantResponseText(
 								result.content as unknown[],
@@ -193,6 +199,7 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 								ctx.logger,
 								ctx.apiKey,
 								ctx.normalizedBaseUrl,
+								ctx.includeToolCalls,
 							)
 						}
 
@@ -224,7 +231,7 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 											: "Unknown error",
 								},
 							)
-							modelParams = params
+							modelParams = injectMemoriesIntoParams(params, "", ctx.logger)
 						} else {
 							ctx.logger.error("Error during memory retrieval for stream", {
 								error:
@@ -253,11 +260,9 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 								controller.enqueue(chunk)
 							},
 							flush: async () => {
-								const userMessage = getLastUserMessage(params)
 								if (
 									ctx.addMemory === "always" &&
-									userMessage &&
-									userMessage.trim()
+									hasPersistableUserContent(params)
 								) {
 									saveMemoryAfterResponse(
 										ctx.client,
@@ -268,6 +273,7 @@ const wrapVercelLanguageModel = <T extends LanguageModel>(
 										ctx.logger,
 										ctx.apiKey,
 										ctx.normalizedBaseUrl,
+										ctx.includeToolCalls,
 									)
 								}
 							},

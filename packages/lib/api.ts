@@ -30,15 +30,10 @@ import {
 	UpdateContainerTagSettingsRequestSchema,
 } from "../validation/api"
 
-// Settings response schema - this is custom to console (not in shared validation)
-const SettingsResponseSchema = z.object({
-	message: z.string(),
-	settings: z.object({
-		excludeItems: z.array(z.string().min(1).max(20)).optional(),
-		filterPrompt: z.string().min(1).max(750).optional(),
-		includeItems: z.array(z.string().min(1).max(20)).optional(),
-		shouldLLMFilter: z.boolean().optional(),
-	}),
+const UpdateSettingsResponseSchema = z.object({
+	orgId: z.string(),
+	orgSlug: z.string(),
+	updated: SettingsRequestSchema,
 })
 
 // Analytics request schema - custom to console
@@ -58,6 +53,34 @@ const WaitlistStatusResponseSchema = z.object({
 })
 
 export const apiSchema = createSchema({
+	// Inferred-memory review queue (Nova "Suggested for you")
+	"@get/container-tags/:containerTag/inferred": {
+		output: z.object({
+			memories: z.array(
+				z.object({
+					id: z.string(),
+					memory: z.string(),
+					parentCount: z.number(),
+					createdAt: z.string(),
+					updatedAt: z.string(),
+					metadata: z.record(z.string(), z.unknown()).nullable(),
+				}),
+			),
+			total: z.number(),
+		}),
+		params: z.object({ containerTag: z.string() }),
+	},
+
+	"@post/container-tags/:containerTag/inferred/:memoryId/review": {
+		input: z.object({ action: z.enum(["approve", "decline", "undo"]) }),
+		output: z.object({
+			id: z.string(),
+			isInference: z.boolean(),
+			reviewStatus: z.enum(["approved", "declined"]).nullable(),
+		}),
+		params: z.object({ containerTag: z.string(), memoryId: z.string() }),
+	},
+
 	"@get/analytics/chat": {
 		output: AnalyticsChatResponseSchema,
 		query: AnalyticsRequestSchema,
@@ -168,11 +191,11 @@ export const apiSchema = createSchema({
 
 	// Settings operations
 	"@get/settings": {
-		output: z.object({}).passthrough(),
+		output: SettingsRequestSchema,
 	},
 	"@patch/settings": {
 		input: SettingsRequestSchema,
-		output: SettingsResponseSchema,
+		output: UpdateSettingsResponseSchema,
 	},
 	"@post/settings/reset": {
 		input: z.object({ confirmation: z.string() }),
@@ -347,6 +370,76 @@ export const apiSchema = createSchema({
 		}),
 		output: z.object({
 			message: z.string(),
+		}),
+	},
+
+	// Weekly digest preferences
+	"@get/digests/preferences": {
+		output: z.object({ digestOptOut: z.boolean() }),
+	},
+	"@post/digests/preferences": {
+		input: z.object({ digestOptOut: z.boolean() }),
+		output: z.object({ digestOptOut: z.boolean() }),
+	},
+
+	// Weekly digest endpoints
+	"@get/digests": {
+		output: z.object({
+			digests: z.array(
+				z.object({
+					id: z.string(),
+					isoWeek: z.string(),
+					emailSubject: z.string().nullable(),
+					title: z.string().nullable(),
+					status: z.enum(["pending", "processing", "completed", "failed"]),
+					sentAt: z.string().nullable(),
+					generatedAt: z.string(),
+					highlightCount: z.number(),
+					memoryCount: z.number(),
+				}),
+			),
+			page: z.number(),
+			limit: z.number(),
+		}),
+		query: z.object({
+			page: z.number().optional(),
+			limit: z.number().optional(),
+		}),
+	},
+
+	"@get/digests/:id": {
+		output: z.object({
+			id: z.string(),
+			isoWeek: z.string(),
+			emailSubject: z.string().nullable(),
+			status: z.enum(["pending", "processing", "completed", "failed"]),
+			sentAt: z.string().nullable(),
+			generatedAt: z.string(),
+			digestData: z.object({
+				title: z.string(),
+				intro: z.string(),
+				highlights: z.array(
+					z.object({
+						id: z.string(),
+						title: z.string(),
+						content: z.string(),
+						format: z.enum(["paragraph", "bullets", "quote", "one_liner"]),
+						query: z.string(),
+						sourceDocumentIds: z.array(z.string()),
+					}),
+				),
+				featureRecommendations: z.array(
+					z.object({
+						feature: z.string(),
+						headline: z.string(),
+						body: z.string(),
+						ctaLabel: z.string(),
+						ctaUrl: z.string(),
+					}),
+				),
+				memoryCount: z.number(),
+				spaceCount: z.number(),
+			}),
 		}),
 	},
 })

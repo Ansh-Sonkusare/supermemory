@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>面向 AI 的记忆与上下文引擎，业界领先。也可以把它当作公司或个人的「大脑」来用。</strong>
+  <strong>面向 AI 的记忆与上下文引擎，业界领先。</strong>
 </p>
 
 <p align="center">
@@ -60,7 +60,7 @@ Supermemory 是为 AI 设计的记忆与上下文层。在 **[LongMemEval](https
 
 <h3>🧑‍💻 我只是 AI 工具的用户</h3>
 
-直接用我们的应用，给自己搭一份专属的 supermemory。它会**在每次对话之间维护一张持久的记忆图谱**。
+通过插件或 MCP 服务器，让 Claude Code、Cursor、Codex 和 OpenCode **在每次对话之间保持持久记忆**。
 
 你的 AI 会记住你的偏好、项目、历史讨论——而且越用越聪明。
 
@@ -85,38 +85,40 @@ Supermemory 是为 AI 设计的记忆与上下文层。在 **[LongMemEval](https
 
 ## 给你的 AI 装上记忆
 
-Supermemory 的应用、浏览器扩展、插件和 MCP 服务器，可以为任何兼容的 AI 助手提供持久记忆。装一次，AI 从此记住你。
-
-### 应用
-
-不用写代码，直接用我们面向消费者的应用——免费。
-
-入口：https://app.supermemory.ai
-
-<img width="1705" height="1030" alt="image" src="https://github.com/user-attachments/assets/5b43af30-b998-4585-8de6-f3e9a26d894a" />
-
-应用里内置了一个 agent，我们叫它 Nova。
+插件和 MCP 服务器可以为任何兼容的 AI 助手提供持久记忆。装一次，AI 从此记住你。
 
 ### Supermemory 插件
 
-Supermemory 已经为 Claude Code、OpenCode、OpenClaw、Hermes 提供了开箱即用的插件。
+Supermemory 已经为 Claude Code、Cursor、Codex、OpenCode、OpenClaw、Hermes 提供了开箱即用的插件。
 
 <img width="844" height="484" alt="image" src="https://github.com/user-attachments/assets/ecb879a2-8652-495d-9228-f305a97ba603" />
 
 这些插件本质上是 supermemory API 的实现，全部开源：
 
-- Openclaw 插件：https://github.com/supermemoryai/openclaw-supermemory
 - Claude Code 插件：https://github.com/supermemoryai/claude-supermemory
+- Cursor 插件：https://github.com/supermemoryai/cursor-supermemory
+- Codex 插件：https://github.com/supermemoryai/codex-supermemory
+- OpenClaw 插件：https://github.com/supermemoryai/openclaw-supermemory
 - OpenCode 插件：https://github.com/supermemoryai/opencode-supermemory
 - Hermes agent（Supermemory 作为记忆 provider）：https://github.com/NousResearch/hermes-agent
 
-### MCP——一键安装
+### MCP
 
-```bash
-npx -y install-mcp@latest https://mcp.supermemory.ai/mcp --client claude --oauth=yes
+服务地址：
+
+```text
+https://mcp.supermemory.ai/mcp
 ```
 
-把 `claude` 换成你用的客户端即可：`cursor`、`windsurf`、`vscode` 等等。
+```json
+{
+  "mcpServers": {
+    "supermemory": {
+      "url": "https://mcp.supermemory.ai/mcp"
+    }
+  }
+}
+```
 
 更多 MCP 细节见：https://supermemory.ai/docs/supermemory-mcp/mcp
 
@@ -153,21 +155,6 @@ MCP 服务器开源——[查看源码](https://supermemory.ai/docs/supermemory-
   "mcpServers": {
     "supermemory": {
       "url": "https://mcp.supermemory.ai/mcp"
-    }
-  }
-}
-```
-
-如果想用 API key 代替 OAuth：
-
-```json
-{
-  "mcpServers": {
-    "supermemory": {
-      "url": "https://mcp.supermemory.ai/mcp",
-      "headers": {
-        "Authorization": "Bearer sm_your_api_key_here"
-      }
     }
   }
 }
@@ -247,7 +234,7 @@ const agent = new Agent(withSupermemory(config, "user-123", { mode: "full" }));
 
 ```typescript
 // 混合检索（默认）——一次查询同时跑 RAG 和记忆
-const results = await client.search.memories({
+const results = await client.search({
   q: "how do I deploy?",
   containerTag: "user_123",
   searchMode: "hybrid",
@@ -255,7 +242,7 @@ const results = await client.search.memories({
 // 返回部署文档（RAG）+ 该用户的部署偏好（记忆）
 
 // 只查记忆
-const results = await client.search.memories({
+const results = await client.search({
   q: "user preferences",
   containerTag: "user_123",
   searchMode: "memories",
@@ -289,8 +276,8 @@ const { profile } = await client.profile({ containerTag: "user_123" });
 |---|---|
 | `client.add()` | 存储内容——文本、对话、URL、HTML |
 | `client.profile()` | 一次调用返回用户画像 + 可选检索 |
-| `client.search.memories()` | 跨记忆和文档的混合检索 |
-| `client.search.documents()` | 带元数据过滤的文档检索 |
+| `client.search()` | 跨记忆和文档的混合检索（`searchMode`） |
+| `client.search.documents()` | 带元数据过滤的文档检索（旧版 v3 响应格式） |
 | `client.documents.uploadFile()` | 上传 PDF、图片、视频、代码 |
 | `client.documents.list()` | 列出和筛选文档 |
 | `client.settings.update()` | 配置记忆抽取与切分策略 |

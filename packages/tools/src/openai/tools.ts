@@ -1,11 +1,16 @@
 import type OpenAI from "openai"
 import Supermemory from "supermemory"
 import {
+	CLIENT_OPTIONS,
 	DEFAULT_VALUES,
 	PARAMETER_DESCRIPTIONS,
+	SEARCH_LIMIT_BOUNDS,
 	TOOL_DESCRIPTIONS,
+	clampSearchLimit,
+	deleteDocumentByIdentifier,
 	getContainerTags,
 } from "../tools-shared"
+import { forgetMemoryRequest } from "../shared/forget-memory"
 import type { SupermemoryToolsConfig } from "../types"
 
 /**
@@ -13,14 +18,14 @@ import type { SupermemoryToolsConfig } from "../types"
  */
 export interface MemorySearchResult {
 	success: boolean
-	results?: Awaited<ReturnType<Supermemory["search"]["execute"]>>["results"]
+	results?: Awaited<ReturnType<Supermemory["search"]>>["results"]
 	count?: number
 	error?: string
 }
 
 export interface MemoryAddResult {
 	success: boolean
-	memory?: Awaited<ReturnType<Supermemory["memories"]["add"]>>
+	memory?: Awaited<ReturnType<Supermemory["add"]>>
 	error?: string
 }
 
@@ -30,13 +35,13 @@ export interface ProfileResult {
 		static: string[]
 		dynamic: string[]
 	}
-	searchResults?: Awaited<ReturnType<Supermemory["search"]["execute"]>>
+	searchResults?: Awaited<ReturnType<Supermemory["profile"]>>["searchResults"]
 	error?: string
 }
 
 export interface DocumentListResult {
 	success: boolean
-	documents?: Awaited<ReturnType<Supermemory["documents"]["list"]>>["documents"]
+	documents?: Awaited<ReturnType<Supermemory["documents"]["list"]>>["memories"]
 	pagination?: Awaited<
 		ReturnType<Supermemory["documents"]["list"]>
 	>["pagination"]
@@ -81,8 +86,10 @@ export const memoryToolSchemas = {
 					default: DEFAULT_VALUES.includeFullDocs,
 				},
 				limit: {
-					type: "number",
-					description: PARAMETER_DESCRIPTIONS.limit,
+					type: "integer",
+					minimum: SEARCH_LIMIT_BOUNDS.min,
+					maximum: SEARCH_LIMIT_BOUNDS.max,
+					description: PARAMETER_DESCRIPTIONS.searchLimit,
 					default: DEFAULT_VALUES.limit,
 				},
 			},
@@ -139,13 +146,9 @@ export const memoryToolSchemas = {
 					description: PARAMETER_DESCRIPTIONS.limit,
 					default: DEFAULT_VALUES.limit,
 				},
-				offset: {
+				page: {
 					type: "number",
-					description: PARAMETER_DESCRIPTIONS.offset,
-				},
-				status: {
-					type: "string",
-					description: PARAMETER_DESCRIPTIONS.status,
+					description: PARAMETER_DESCRIPTIONS.page,
 				},
 			},
 			required: [],
@@ -161,6 +164,10 @@ export const memoryToolSchemas = {
 				documentId: {
 					type: "string",
 					description: PARAMETER_DESCRIPTIONS.documentId,
+				},
+				containerTag: {
+					type: "string",
+					description: PARAMETER_DESCRIPTIONS.documentContainerTag,
 				},
 			},
 			required: ["documentId"],
@@ -224,6 +231,7 @@ export const memoryToolSchemas = {
 function createClient(apiKey: string, config?: SupermemoryToolsConfig) {
 	const client = new Supermemory({
 		apiKey,
+		...CLIENT_OPTIONS,
 		...(config?.baseUrl && { baseURL: config.baseUrl }),
 	})
 
@@ -243,7 +251,6 @@ export function createSearchMemoriesFunction(
 
 	return async function searchMemories({
 		informationToGet,
-		includeFullDocs = DEFAULT_VALUES.includeFullDocs,
 		limit = DEFAULT_VALUES.limit,
 	}: {
 		informationToGet: string
@@ -251,12 +258,12 @@ export function createSearchMemoriesFunction(
 		limit?: number
 	}): Promise<MemorySearchResult> {
 		try {
-			const response = await client.search.execute({
+			const response = await client.search({
 				q: informationToGet,
-				containerTags,
-				limit,
-				chunkThreshold: DEFAULT_VALUES.chunkThreshold,
-				includeFullDocs,
+				containerTag: containerTags[0],
+				limit: clampSearchLimit(limit),
+				threshold: DEFAULT_VALUES.searchThreshold,
+				searchMode: "hybrid",
 			})
 
 			return {
@@ -359,27 +366,26 @@ export function createDocumentListFunction(
 	return async function documentList({
 		containerTag,
 		limit,
-		offset,
-		status,
+		page,
 	}: {
 		containerTag?: string
 		limit?: number
-		offset?: number
-		status?: string
+		page?: number
 	}): Promise<DocumentListResult> {
 		try {
-			const tag = containerTag || containerTags[0]
+			const scopeTags: [string, ...string[]] = containerTag
+				? [containerTag]
+				: containerTags
 
 			const response = await client.documents.list({
-				containerTags: [tag],
+				containerTags: scopeTags,
 				limit: limit || DEFAULT_VALUES.limit,
-				...(offset !== undefined && { offset }),
-				...(status && { status }),
+				...(page !== undefined && { page }),
 			})
 
 			return {
 				success: true,
-				documents: response.documents,
+				documents: response.memories,
 				pagination: response.pagination,
 			}
 		} catch (error) {
@@ -398,15 +404,20 @@ export function createDocumentDeleteFunction(
 	apiKey: string,
 	config?: SupermemoryToolsConfig,
 ) {
-	const { client } = createClient(apiKey, config)
+	const { client, containerTags } = createClient(apiKey, config)
 
 	return async function documentDelete({
 		documentId,
+		containerTag,
 	}: {
 		documentId: string
+		containerTag?: string
 	}): Promise<DocumentDeleteResult> {
 		try {
-			await client.documents.delete(documentId)
+			const scopeTags: [string, ...string[]] = containerTag
+				? [containerTag]
+				: containerTags
+			await deleteDocumentByIdentifier(client, documentId, scopeTags)
 
 			return {
 				success: true,
@@ -470,7 +481,7 @@ export function createMemoryForgetFunction(
 	apiKey: string,
 	config?: SupermemoryToolsConfig,
 ) {
-	const { client, containerTags } = createClient(apiKey, config)
+	const containerTags = getContainerTags(config)
 
 	return async function memoryForget({
 		containerTag,
@@ -493,12 +504,16 @@ export function createMemoryForgetFunction(
 
 			const tag = containerTag || containerTags[0]
 
-			await client.memories.forget({
-				containerTag: tag,
-				...(memoryId && { id: memoryId }),
-				...(memoryContent && { content: memoryContent }),
-				...(reason && { reason }),
-			})
+			await forgetMemoryRequest(
+				apiKey,
+				{
+					containerTag: tag as string,
+					...(memoryId && { id: memoryId }),
+					...(memoryContent && { content: memoryContent }),
+					...(reason && { reason }),
+				},
+				config?.baseUrl,
+			)
 
 			return {
 				success: true,
@@ -554,6 +569,14 @@ export function getToolDefinitions(): OpenAI.Chat.Completions.ChatCompletionTool
 	]
 }
 
+function parseToolArguments(argumentsJson: string) {
+	try {
+		return { success: true as const, value: JSON.parse(argumentsJson) }
+	} catch {
+		return { success: false as const }
+	}
+}
+
 /**
  * Execute a tool call based on the function name and arguments
  */
@@ -567,7 +590,14 @@ export function createToolCallExecutor(
 		toolCall: OpenAI.Chat.Completions.ChatCompletionMessageToolCall,
 	): Promise<string> {
 		const functionName = toolCall.function.name
-		const args = JSON.parse(toolCall.function.arguments)
+		const parsed = parseToolArguments(toolCall.function.arguments)
+		if (!parsed.success) {
+			return JSON.stringify({
+				success: false,
+				error: `Invalid JSON arguments for ${functionName}`,
+			})
+		}
+		const args = parsed.value
 
 		switch (functionName) {
 			case "searchMemories":
