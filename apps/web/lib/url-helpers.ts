@@ -1,4 +1,11 @@
 const PROXY_LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
+
+/**
+ * Returns the backend API URL (from NEXT_PUBLIC_BACKEND_URL or default).
+ */
+export function getBackendUrl(): string {
+	return process.env.NEXT_PUBLIC_BACKEND_URL ?? "https://api.supermemory.ai"
+}
 const DEV_APP_ORIGIN = "https://app.dev.supermemory.ai"
 const PROD_APP_ORIGIN = "https://app.supermemory.ai"
 
@@ -118,6 +125,18 @@ export const extractUrls = (
 		urls.push(normalized)
 	}
 	return { urls, duplicates }
+}
+
+/**
+ * Checks if a URL is a YouTube URL.
+ */
+export const isYouTubeUrl = (url: string): boolean => {
+	try {
+		const { hostname } = new URL(url)
+		return hostname === "youtube.com" || hostname === "www.youtube.com" || hostname === "youtu.be"
+	} catch {
+		return false
+	}
 }
 
 /**
