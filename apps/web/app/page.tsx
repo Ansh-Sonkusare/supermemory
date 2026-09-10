@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { consoleOrigin } from "../console-origin"
+import { AppExperience } from "@/components/app-experience"
 
 const SECONDS = 5
 
@@ -20,6 +21,14 @@ export default function MovedPage() {
 	}, [target])
 
 	const newHost = target.replace(/^https?:\/\//, "")
+
+	// In local API key mode, show the full app instead of redirect shell
+	if (typeof window !== "undefined" && window.location.port === "3456") {
+		return <AppExperience />
+	}
+	if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_KEY) {
+		return <AppExperience />
+	}
 
 	return (
 		<div className="page">
